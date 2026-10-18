@@ -1,0 +1,8 @@
+node_modules/
+dist/
+__pycache__/
+*.local
+.vercel
+tsconfig.tsbuildinfo
+dist-preview/
+preview-public/
