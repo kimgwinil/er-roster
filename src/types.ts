@@ -9,6 +9,10 @@ export const CODES = [...WORK, ...REST, NONE] as const
 export const SHIFTS = ['D', 'E', 'N', '소아'] as const
 export const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
+/** 근무표·엑셀에 보이는 이름 (내부 코드·저장 파일은 그대로 소아·휴가) */
+export const CODE_NAME: Record<string, string> = { 소아: '소중', 휴가: '휴' }
+export const codeName = (c: string) => CODE_NAME[c] ?? c
+
 export type Code = (typeof CODES)[number]
 export type Shift = (typeof SHIFTS)[number]
 

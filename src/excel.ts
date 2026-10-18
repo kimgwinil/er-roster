@@ -5,7 +5,7 @@ import { addDays, diffDays, fmt, label, periodDates, weekday } from './dates'
 import { ledger, weekCount } from './leave'
 import { defaultConditions, describe } from './conditions'
 import { dailyCounts, requestState } from './rules'
-import { type Issue, type Scenario, type Staff, WEEKDAYS } from './types'
+import { codeName, type Issue, type Scenario, type Staff, WEEKDAYS } from './types'
 
 const ALIAS: Record<string, string> = { 주: '주휴', 소중: '소아', OFF: 'OF', 오프: 'OF' }
 
@@ -270,12 +270,12 @@ export async function exportRoster(sc: Scenario, issues: Issue[]): Promise<Blob>
   ws.addRow([sc.title])
   ws.getRow(1).font = { ...font, size: 14, bold: true }
   const times = Object.entries(sc.shiftTimes).map(([k, v]) => `${k} ${v}`).join('   ')
-  ws.addRow([`${times}   |   하루 ${Object.entries(sc.demand).map(([k, v]) => `${k}${v}`).join('·')}   |   ${fmt(new Date())} 내보냄`])
+  ws.addRow([`${times}   |   하루 ${Object.entries(sc.demand).map(([k, v]) => `${codeName(k)}${v}`).join('·')}   |   ${fmt(new Date())} 내보냄`])
   ws.getRow(2).font = { ...font, color: { argb: 'FF595959' } }
   ws.getCell('A2').value += '   |   노랑 = 신청오프 반영 · 형광 분홍 = 신청오프 미반영 · 형광 연두 = 근무 조건 위배'
   const reqs = new Map(sc.requests.map((q) => [`${q.staff}|${q.date}`, q]))
   const sumCols = ['D', 'E', 'N', '소아', '근무', '주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴', '수휴']
-  ws.addRow(['번호', '이름', '구분', '주휴', ...dates.map(label), ...sumCols])
+  ws.addRow(['번호', '이름', '구분', '주휴', ...dates.map(label), ...sumCols.map(codeName)])
   const flagged = new Map<string, string[]>()
   for (const i of issues) for (const [sid, d] of i.cells) {
     const k = `${sid}|${d}`
@@ -285,7 +285,7 @@ export async function exportRoster(sc: Scenario, issues: Issue[]): Promise<Blob>
     const row = sc.roster[s.id] ?? []
     const cnt = (c: string) => row.filter((x) => x === c).length
     const work = ['D', 'E', 'N', '소아', '미드'].reduce((a, c) => a + cnt(c), 0)
-    const r = ws.addRow([s.no, s.name, roleText(s), WEEKDAYS[s.juhu], ...dates.map((_, d) => row[d] ?? ''),
+    const r = ws.addRow([s.no, s.name, roleText(s), WEEKDAYS[s.juhu], ...dates.map((_, d) => codeName(row[d] ?? '')),
       cnt('D'), cnt('E'), cnt('N'), cnt('소아'), work, cnt('주휴'), cnt('OF'), cnt('휴가'), cnt('공가'), cnt('교육'), cnt('병가'), cnt('경조'), cnt('생휴'), cnt('수휴')])
     dates.forEach((_, d) => {
       const cell = r.getCell(5 + d)
@@ -312,7 +312,7 @@ export async function exportRoster(sc: Scenario, issues: Issue[]): Promise<Blob>
   }
   ws.addRow([])
   const dc = dailyCounts(sc)
-  const sumRows: [string, string][] = [['D 인원', 'D'], ['E 인원', 'E'], ['N 인원', 'N'], ['소아 인원', '소아'], ['D 차지', 'Dc'], ['E 차지', 'Ec'],
+  const sumRows: [string, string][] = [['D 인원', 'D'], ['E 인원', 'E'], ['N 인원', 'N'], ['소중 인원', '소아'], ['D 차지', 'Dc'], ['E 차지', 'Ec'],
     ['N 차지', 'Nc'], ['D 신규', 'Dn'], ['E 신규', 'En'], ['N 신규', 'Nn'], ['소아차지', 'pc'], ['소아액팅', 'pa']]
   for (const [t, k] of sumRows) ws.addRow(['', t, '', '', ...dc.map((r) => r[k])]).font = font
   ws.eachRow((row, i) => {

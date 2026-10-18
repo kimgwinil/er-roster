@@ -14,7 +14,7 @@ import { migrate, newId } from './conditions'
 import { ask, NO_SERVER, notify, PREVIEW, saveFile } from './platform'
 import { validate } from './rules'
 import { nextPeriod, normalize, useScenario } from './store'
-import { type Issue, REST, type Scenario } from './types'
+import { codeName, type Issue, REST, type Scenario } from './types'
 
 const TABS = ['근무표', '확인·위반', '급작 휴가·변동', '조건 규칙', '직원', '신청·지정', '휴가 잔여', '조건 설정'] as const
 type Tab = (typeof TABS)[number]
@@ -284,7 +284,7 @@ export default function App() {
       {tab === '근무표' && sc.staff.length > 0 && (
         <>
           <div className="legend small">
-            {['D', 'E', 'N', '소아', '미드', '주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴', '수휴'].map((c) => <span key={c} className={`cell code-${c}`}>{c}</span>)}
+            {['D', 'E', 'N', '소아', '미드', '주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴', '수휴'].map((c) => <span key={c} className={`cell code-${c}`}>{codeName(c)}</span>)}
             <span className="muted">· 칸을 눌러 직접 수정 · <span className="lock-demo" /> 고정 · <span className="cell req-ok">노랑</span> 신청오프 반영 · <span className="cell req-miss">형광 분홍</span> 신청오프 미반영 · <span className="cell viol-fill">형광 연두</span> 조건 위배 · <span className="fix-demo" /> 지정 · 주황 테두리 확인 · 점선 권장 · 날짜를 누르면 부분 재생성 기준일</span>
           </div>
           <RosterGrid sc={sc} issues={issues} focus={focus} baseDate={baseDate} onBaseDate={setBaseDate} onSet={setCell} changed={changed} />

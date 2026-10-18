@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { label, periodDates, short, weekday } from '../dates'
 import { ledger } from '../leave'
 import { dailyCounts, employed, fixedMap, requestState } from '../rules'
-import { CODES, type Issue, type Scenario, WEEKDAYS } from '../types'
+import { CODES, codeName, type Issue, type Scenario, WEEKDAYS } from '../types'
 
 interface Props {
   sc: Scenario
@@ -49,7 +49,7 @@ export function RosterGrid({ sc, issues, focus, baseDate, onBaseDate, onSet, cha
     ['D', (r) => r.D, (n) => n === sc.demand.D],
     ['E', (r) => r.E, (n) => n === sc.demand.E],
     ['N', (r) => r.N, (n) => n === sc.demand.N],
-    ['소아', (r) => r['소아'], (n) => n === sc.demand['소아']],
+    ['소중', (r) => r['소아'], (n) => n === sc.demand['소아']],
     ['D 차지', (r) => r.Dc, (n) => n >= sc.rules.chargeMin && n <= sc.rules.chargeMax],
     ['E 차지', (r) => r.Ec, (n) => n >= sc.rules.chargeMin && n <= sc.rules.chargeMax],
     ['N 차지', (r) => r.Nc, (n) => n >= sc.rules.chargeMin && n <= sc.rules.chargeMax],
@@ -82,7 +82,7 @@ export function RosterGrid({ sc, issues, focus, baseDate, onBaseDate, onSet, cha
                 {WEEKDAYS[weekday(dt)]}
               </th>
             ))}
-            <th>D</th><th>E</th><th>N</th><th>소아</th><th>휴가</th><th title="잔여 계산 기간 종료 시 잔여">잔여</th>
+            <th>D</th><th>E</th><th>N</th><th>소중</th><th>휴</th><th title="잔여 계산 기간 종료 시 잔여">잔여</th>
           </tr>
         </thead>
         <tbody>
@@ -99,7 +99,7 @@ export function RosterGrid({ sc, issues, focus, baseDate, onBaseDate, onSet, cha
                 <td className="c-role">{[s.roles.charge && '차지', s.roles.newbie && '신규', s.roles.pedsCharge && '소아차지', s.roles.pedsActing && '소아액팅'].filter(Boolean).join('/')}</td>
                 <td>{WEEKDAYS[s.juhu]}</td>
                 {prevLen > 0 && Array.from({ length: prevLen }, (_, k) => (
-                  <td key={k} className="prev">{prev[k - (prevLen - prev.length)] ?? ''}</td>
+                  <td key={k} className="prev">{codeName(prev[k - (prevLen - prev.length)] ?? '')}</td>
                 ))}
                 {dates.map((dt, d) => {
                   const c = row[d] ?? ''
@@ -125,7 +125,7 @@ export function RosterGrid({ sc, issues, focus, baseDate, onBaseDate, onSet, cha
                       id={`cell-${k}`}
                       onClick={() => setEdit({ staff: s.id, day: d })}
                     >
-                      {c}
+                      {codeName(c)}
                       {locks[d] && <span className="lock" />}
                       {req && <span className="req" />}
                       {f && <span className="fix" />}
@@ -173,7 +173,7 @@ export function RosterGrid({ sc, issues, focus, baseDate, onBaseDate, onSet, cha
             {(cellIssues.get(`${editing.id}|${edit.day}`) ?? []).map((i) => <p key={i.id} className={`note lv-${i.level}`}>[{i.level}] {i.msg}</p>)}
             <div className="code-pick">
               {CODES.map((c) => (
-                <button key={c} className={`code-btn code-${c}`} onClick={() => { onSet(editing.id, edit.day, c); setEdit(null) }}>{c}</button>
+                <button key={c} className={`code-btn code-${c}`} onClick={() => { onSet(editing.id, edit.day, c); setEdit(null) }}>{codeName(c)}</button>
               ))}
             </div>
             <p className="muted small">선택한 근무는 고정되어, 자동 생성을 다시 해도 바뀌지 않습니다.</p>
