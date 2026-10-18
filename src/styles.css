@@ -148,6 +148,7 @@ h3.sec { font-size: 15px; margin: 0 8px 6px 0; }
 .code-병가 { background: #fde2e4; color: #9f1239; }
 .code-경조 { background: #e7e5e4; color: #44403c; }
 .code-생휴 { background: #fbe4f0; color: #9d174d; }
+.code-수휴 { background: #e0f2fe; color: #075985; }
 .chg { position: absolute; left: 0; bottom: 0; width: 0; height: 0; border-bottom: 8px solid #12b76a; border-right: 8px solid transparent; }
 .early { position: absolute; right: 1px; bottom: 0; font-size: 8px; color: #c4320a; font-weight: 800; }
 /* 엑셀과 같은 색: 신청오프 반영 노랑, 근무 조건 위배 형광 연두, 신청오프 미반영 형광 분홍 (뒤에 쓴 것이 우선) */

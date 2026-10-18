@@ -9,7 +9,7 @@ import { RulesPanel } from './components/RulesPanel'
 import { StaffPanel } from './components/StaffPanel'
 import { type SuddenInput, SuddenPanel } from './components/SuddenPanel'
 import { addDays, label, periodDates, short } from './dates'
-import { exportRoster, importConditions } from './excel'
+import { exportRoster, importConditions, importRosterSheet } from './excel'
 import { migrate, newId } from './conditions'
 import { ask, NO_SERVER, notify, PREVIEW, saveFile } from './platform'
 import { validate } from './rules'
@@ -158,12 +158,23 @@ export default function App() {
   const onFile = async (f: File) => {
     try {
       let next: Scenario
+      let msg = ''
       if (f.name.toLowerCase().endsWith('.json')) next = migrate(JSON.parse(await f.text()) as Scenario)
-      else next = await importConditions(await f.arrayBuffer())
+      else {
+        const buf = await f.arrayBuffer()
+        // 번표 엑셀(근무표 시트)이면 근무를 불러오고, 아니면 병동 조건 엑셀로 읽음
+        const roster = await importRosterSheet(buf, sc.staff.length ? sc : null)
+        if (roster) {
+          next = roster.sc
+          msg = roster.matched ? `번표 엑셀에서 ${roster.matched}명의 근무를 불러왔습니다 (조건·신청은 그대로${roster.added ? `, 새 직원 ${roster.added}명 추가` : ''}).`
+            : `번표 엑셀에서 ${next.staff.length}명의 근무를 불러왔습니다. 조건·신청오프는 [신청·지정]·[직원]에서 넣거나 시나리오 JSON을 먼저 연 뒤 엑셀을 불러오세요.`
+        } else next = await importConditions(buf)
+      }
       if (!next.staff || !next.startDate) throw new Error('번표 파일 형식이 아닙니다')
       if (sc.staff.length && !ask(`현재 번표를 '${f.name}' 내용으로 바꿀까요? (되돌리기 가능)`)) return
       replace(normalize({ ...next, locks: next.locks ?? {}, acks: next.acks ?? {}, notes: next.notes ?? [] }))
       setTab('근무표')
+      if (msg) setResult({ ok: true, text: msg, relaxed: [] })
     } catch (e) {
       notify(`불러오기 실패: ${String(e)}`)
     }
@@ -204,7 +215,7 @@ export default function App() {
 
       <div className="toolbar">
         <input ref={fileRef} type="file" accept=".xlsx,.json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = '' }} />
-        <button onClick={() => fileRef.current?.click()} title="병동 조건 엑셀(번표명단과 조건값) 또는 저장한 번표 JSON">불러오기</button>
+        <button onClick={() => fileRef.current?.click()} title="번표 엑셀(근무표 시트) · 병동 조건 엑셀(번표명단과 조건값) · 저장한 번표 JSON">불러오기</button>
         <button onClick={() => saveFile(new Blob([JSON.stringify(sc, null, 1)], { type: 'application/json' }), `번표_${sc.startDate}.json`)}>저장(JSON)</button>
         <button onClick={async () => saveFile(await exportRoster(sc, issues), `응급실_번표_${sc.startDate}.xlsx`)}>엑셀 내보내기</button>
         <span className="sep" />
@@ -265,7 +276,7 @@ export default function App() {
 
       {!sc.staff.length && (
         <div className="empty">
-          <p>명단이 없습니다. [불러오기]로 병동 조건 엑셀(번표명단과 조건값 · 번표신청달력) 또는 저장한 번표 JSON을 여세요.</p>
+          <p>명단이 없습니다. [불러오기]로 번표 엑셀, 병동 조건 엑셀(번표명단과 조건값 · 번표신청달력) 또는 저장한 번표 JSON을 여세요.</p>
           <p className="muted small">입력한 내용은 이 브라우저에만 저장됩니다. 다른 컴퓨터에서 쓰려면 [저장(JSON)] 파일을 옮기세요.</p>
         </div>
       )}
@@ -273,7 +284,7 @@ export default function App() {
       {tab === '근무표' && sc.staff.length > 0 && (
         <>
           <div className="legend small">
-            {['D', 'E', 'N', '소아', '미드', '주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴'].map((c) => <span key={c} className={`cell code-${c}`}>{c}</span>)}
+            {['D', 'E', 'N', '소아', '미드', '주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴', '수휴'].map((c) => <span key={c} className={`cell code-${c}`}>{c}</span>)}
             <span className="muted">· 칸을 눌러 직접 수정 · <span className="lock-demo" /> 고정 · <span className="cell req-ok">노랑</span> 신청오프 반영 · <span className="cell req-miss">형광 분홍</span> 신청오프 미반영 · <span className="cell viol-fill">형광 연두</span> 조건 위배 · <span className="fix-demo" /> 지정 · 주황 테두리 확인 · 점선 권장 · 날짜를 누르면 부분 재생성 기준일</span>
           </div>
           <RosterGrid sc={sc} issues={issues} focus={focus} baseDate={baseDate} onBaseDate={setBaseDate} onSet={setCell} changed={changed} />

@@ -1,7 +1,9 @@
 export const WORK = ['D', 'E', 'N', '소아', '미드'] as const
-export const REST = ['주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴'] as const
+export const REST = ['주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴', '수휴'] as const
+/** 휴가처럼 추가로 쉬는 날 — 최소 휴가 개수에 셈 (잔여휴가 차감은 '휴가'만) */
+export const LEAVE_LIKE = ['휴가', '생휴', '경조', '수휴'] as const
 /** 그날을 지정했을 때만 쓰는 휴무 코드 */
-export const DESIGNATED = ['공가', '교육', '병가', '경조', '생휴'] as const
+export const DESIGNATED = ['공가', '교육', '병가', '경조', '생휴', '수휴'] as const
 export const NONE = '-'
 export const CODES = [...WORK, ...REST, NONE] as const
 export const SHIFTS = ['D', 'E', 'N', '소아'] as const

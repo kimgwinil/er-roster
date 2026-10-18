@@ -15,8 +15,8 @@ from http.server import BaseHTTPRequestHandler
 from ortools.sat.python import cp_model
 
 WORK = ["D", "E", "N", "소아", "미드"]
-REST = ["주휴", "OF", "휴가", "공가", "교육", "병가", "경조", "생휴"]  # 공가·교육·병가·경조·생휴(생리휴가)는 지정한 날에만
-DESIGNATED = ("공가", "교육", "병가", "경조", "생휴")
+REST = ["주휴", "OF", "휴가", "공가", "교육", "병가", "경조", "생휴", "수휴"]  # 공가·교육·병가·경조·생휴·수휴는 지정한 날에만
+DESIGNATED = ("공가", "교육", "병가", "경조", "생휴", "수휴")
 NONE = "-"  # 재직 기간 아님 (입사 전 / 퇴사 후)
 CODES = WORK + REST + [NONE]
 SHIFTS = ["D", "E", "N", "소아"]

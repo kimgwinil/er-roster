@@ -1,7 +1,7 @@
 import { label, periodDates, short, weekday } from './dates'
 import { checkConditions } from './conditions'
 import { leaveOverDay, ledger } from './leave'
-import { DESIGNATED, type Issue, type LeaveRequest, type Level, type Scenario, type Staff, REST, SHIFTS, WEEKDAYS, WORK } from './types'
+import { DESIGNATED, type Issue, LEAVE_LIKE, type LeaveRequest, type Level, type Scenario, type Staff, REST, SHIFTS, WEEKDAYS, WORK } from './types'
 
 const isWork = (c: string | undefined) => !!c && (WORK as readonly string[]).includes(c)
 const isRest = (c: string | undefined) => !!c && (REST as readonly string[]).includes(c)
@@ -24,11 +24,14 @@ export function fixedMap(sc: Scenario): Map<string, { allowed: Set<string>; reas
   return m
 }
 
+const OFF_FOR_REQUEST = new Set(['주휴', 'OF', '휴가', '생휴', '경조', '수휴', '병가'])
+
 /** 신청오프 칸 상태: 'ok' 반영(노랑) · 'miss' 반영 못 함(빨강) · null 아직 비어 있음 */
 export function requestState(q: LeaveRequest, c: string | undefined): 'ok' | 'miss' | null {
   if (!c || c === '-') return null
   if (q.alt && c === q.alt) return 'ok'
-  return (q.onlyLeave ? c === '휴가' : ['주휴', 'OF', '휴가'].includes(c)) ? 'ok' : 'miss'
+  // 주휴·OF·휴가 외에 생리휴가·경조·수휴 등 쉬는 날이면 반영된 것으로 봄 (공가·교육은 제외)
+  return (q.onlyLeave ? c === '휴가' : OFF_FOR_REQUEST.has(c)) ? 'ok' : 'miss'
 }
 
 export function validate(sc: Scenario): Issue[] {
@@ -107,7 +110,9 @@ export function validate(sc: Scenario): Issue[] {
       if (!emp) continue
       if (s.allowed && isWork(c) && c !== '미드' && !s.allowed.includes(c))
         add('위반', '가능 근무', `${s.id}|${d}`, `${nm} ${label(date)} ${c} (가능 근무: ${s.allowed.join('·')})`, cell)
-      if (f && !f.allowed.has(c))
+      // 휴무 지정일에 생휴·경조·수휴 같은 특별 휴무를 쓴 경우도 지정을 지킨 것으로 봄
+      const specialRest = (LEAVE_LIKE as readonly string[]).includes(c) && (f?.allowed.has('휴가') || f?.allowed.has('OF'))
+      if (f && !f.allowed.has(c) && !specialRest)
         add('위반', '지정 불일치', `${s.id}|${d}`, `${nm} ${label(date)} ${c} — 지정: ${[...f.allowed].join('/')} (${f.reason})`, cell)
       if (c === '미드' && !f?.allowed.has('미드')) add('확인', '지정 외 미드', `${s.id}|${d}`, `${nm} ${label(date)} 지정 없이 미드`, cell)
       if ((DESIGNATED as readonly string[]).includes(c) && !f?.allowed.has(c)) add('확인', `지정 외 ${c}`, `${s.id}|${d}`, `${nm} ${label(date)} 지정 없이 ${c}`, cell)
@@ -192,7 +197,7 @@ export function validate(sc: Scenario): Issue[] {
       const cell: [string, number][] = [[s.id, d]]
       if (q.alt && c === q.alt) add('확인', '신청오프 근무 전환', `${s.id}|${d}`, `${nm} ${label(q.date)} 신청오프 대신 ${c} (허용된 변경)`, cell)
       else if (q.onlyLeave && c !== '휴가') add('위반', '신청오프', `${s.id}|${d}`, `${nm} ${label(q.date)} 신청오프는 휴가로만 (현재 ${c})`, cell)
-      else if (!['주휴', 'OF', '휴가'].includes(c)) add('위반', '신청오프', `${s.id}|${d}`, `${nm} ${label(q.date)} 신청오프인데 ${c}`, cell)
+      else if (!OFF_FOR_REQUEST.has(c)) add('위반', '신청오프', `${s.id}|${d}`, `${nm} ${label(q.date)} 신청오프인데 ${c}`, cell)
       if (isRest(c)) {
         const before = d >= 1 ? row[d - 1] : prev[L - 1]
         if (before === 'N')
@@ -225,11 +230,12 @@ export function validate(sc: Scenario): Issue[] {
         row.map((c, d) => [c, d] as const)
           .filter(([c, d]) => c === '휴가' && dates[d] <= sc.leaveCapUntil && d >= (over.day >= 0 ? over.day : 0))
           .map(([, d]) => [s.id, d]))
-    const usedCap = lg.used.reduce((a, b) => a + b, 0)
+    // 최소 휴가: 휴가·생리휴가·경조·수휴 등 추가로 쉬는 날을 셈
+    const usedCap = row.filter((c, d) => (LEAVE_LIKE as readonly string[]).includes(c) && dates[d] <= sc.leaveCapUntil).length
     if (s.minLeave && usedCap < s.minLeave)
       add('위반', '추가 휴가', `${s.id}`, `${nm} ${short(sc.leaveCapUntil)}까지 휴가 ${usedCap}개 (최소 ${s.minLeave}개 필요)`)
     for (const lw of s.leaveWindows) {
-      const n = dates.filter((dt, d) => dt >= lw.from && dt <= lw.to && row[d] === '휴가').length
+      const n = dates.filter((dt, d) => dt >= lw.from && dt <= lw.to && (LEAVE_LIKE as readonly string[]).includes(row[d])).length
       if (n < lw.min) add('위반', '기간 내 휴가', `${s.id}|${lw.from}`, `${nm} ${short(lw.from)}~${short(lw.to)} 휴가 ${n}개 (최소 ${lw.min}개)`)
     }
 

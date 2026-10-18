@@ -55,6 +55,107 @@ export function defaultScenario(): Scenario {
   }
 }
 
+/** 번표 엑셀의 근무 표기 → 앱 코드 (소중·휴·중·생11·수10·경·D1 등 병동 표기 포함) */
+export function rosterCode(raw: string): string {
+  const t = raw.replace(/\s+/g, '')
+  if (!t) return ''
+  const map: Record<string, string> = { 소중: '소아', 휴: '휴가', 중: '미드', 경: '경조', 주: '주휴', OFF: 'OF', 오프: 'OF', 생휴: '생휴', 수휴: '수휴' }
+  if (map[t]) return map[t]
+  if (/^생\d*$/.test(t)) return '생휴' // 생리휴가 (생11 = 11월분)
+  if (/^수\d*$/.test(t)) return '수휴' // 휴무지만 OF 개수에는 넣지 않음 (수10·수11)
+  if (/^D\d+$/.test(t)) return '교육' // D1 = 교육일
+  return t
+}
+
+/**
+ * 번표 엑셀(이 앱·생성 프로그램이 만든 '근무표' 시트 형식, 손으로 고친 것 포함) 불러오기.
+ * base(지금 열린 번표)가 있고 이름이 겹치면 조건·신청은 그대로 두고 근무·직전 근무만 바꿈.
+ * 해당 시트가 없으면 null.
+ */
+export async function importRosterSheet(buf: ArrayBuffer, base: Scenario | null): Promise<{ sc: Scenario; matched: number; added: number } | null> {
+  const Excel = await loadExcel()
+  const wb = new Excel.Workbook()
+  await wb.xlsx.load(buf)
+  for (const ws of wb.worksheets) {
+    let h = 0
+    for (let r = 1; r <= Math.min(ws.rowCount, 15) && !h; r++)
+      if (cellText(ws.getCell(r, 1).value).trim() === '번호' && cellText(ws.getCell(r, 2).value).trim() === '이름') h = r
+    if (!h) continue
+    // 날짜 머리글 줄 (m/d 가 가장 많은 줄)
+    const dateRe = /^(\d{1,2})\/(\d{1,2})/
+    let dr = h, best = 0
+    for (let r = h; r <= h + 2; r++) {
+      let n = 0
+      for (let c = 5; c <= ws.columnCount; c++) if (dateRe.test(cellText(ws.getCell(r, c).value).trim())) n++
+      if (n > best) { best = n; dr = r }
+    }
+    if (best < 7) continue
+    const title = [1, 2].map((r) => cellText(ws.getCell(r, 1).value)).join(' ')
+    let year = base ? Number(base.startDate.slice(0, 4)) : Number(title.match(/(20\d\d)/)?.[1] ?? new Date().getFullYear())
+    const cols: { c: number; date: string; prev: boolean }[] = []
+    let prevMonth = 0
+    let mainFrom = 0 // '1주차' 같은 머리글이 시작되는 열 — 그 앞은 직전 근무
+    for (let c = 5; c <= ws.columnCount && !mainFrom; c++) if (/주차|주\s*\(/.test(cellText(ws.getCell(h, c).value))) mainFrom = c
+    for (let c = 5; c <= ws.columnCount; c++) {
+      const m = cellText(ws.getCell(dr, c).value).trim().match(dateRe)
+      if (!m) continue
+      const mo = Number(m[1])
+      if (prevMonth && mo < prevMonth) year++
+      prevMonth = mo
+      const date = `${year}-${String(mo).padStart(2, '0')}-${String(Number(m[2])).padStart(2, '0')}`
+      cols.push({ c, date, prev: mainFrom ? c < mainFrom : base ? date < base.startDate : false })
+    }
+    const main = cols.filter((x) => !x.prev)
+    if (!main.length) continue
+    // 직원 줄: 번호가 숫자인 줄
+    const rows: { no: number; name: string; group: string; juhu: string; prev: string[]; codes: Map<string, string> }[] = []
+    for (let r = dr + 1; r <= ws.rowCount; r++) {
+      const no = Number(cellText(ws.getCell(r, 1).value).trim())
+      const name = cellText(ws.getCell(r, 2).value).trim()
+      if (!Number.isFinite(no) || !name || cellText(ws.getCell(r, 1).value).trim() === '') continue
+      const codes = new Map(main.map((x) => [x.date, rosterCode(cellText(ws.getCell(r, x.c).value))]))
+      rows.push({ no, name, group: cellText(ws.getCell(r, 3).value), juhu: cellText(ws.getCell(r, 4).value).trim(),
+        prev: cols.filter((x) => x.prev).map((x) => rosterCode(cellText(ws.getCell(r, x.c).value))).filter(Boolean), codes })
+    }
+    if (!rows.length) continue
+    const byName = new Map((base?.staff ?? []).map((s) => [s.name, s]))
+    const matched = rows.filter((x) => byName.has(x.name)).length
+    const merge = !!base && matched >= Math.ceil(rows.length / 2)
+    let sc: Scenario
+    if (merge) {
+      sc = { ...base!, roster: { ...base!.roster }, staff: [...base!.staff] }
+    } else {
+      sc = defaultScenario()
+      sc.startDate = main[0].date
+      sc.days = main.length
+      const last = main.filter((x) => x.date.slice(5, 7) === main[0].date.slice(5, 7)).pop()!
+      sc.leaveCapUntil = last.date
+      sc.title = title.split('—')[0].trim() || sc.title
+    }
+    const dates = periodDates(sc.startDate, sc.days)
+    let added = 0
+    for (const x of rows) {
+      let st = merge ? byName.get(x.name) : undefined
+      if (!st) {
+        st = emptyStaff(x.no, x.name)
+        const tags = x.group.split(/[\/\s,·]+/)
+        st.roles = { charge: tags.includes('차지'), newbie: tags.includes('신규'), pedsCharge: tags.includes('소아차지'), pedsActing: tags.includes('소아액팅') }
+        const wd = WEEKDAYS.indexOf(x.juhu.slice(0, 1))
+        if (wd >= 0) st.juhu = wd
+        sc.staff.push(st)
+        if (merge) added++
+      }
+      if (x.prev.length) {
+        const i = sc.staff.findIndex((s) => s.id === st!.id)
+        sc.staff[i] = { ...sc.staff[i], prev: x.prev }
+      }
+      sc.roster[st.id] = dates.map((d) => x.codes.get(d) ?? '')
+    }
+    return { sc, matched: merge ? matched : 0, added }
+  }
+  return null
+}
+
 /** 병동 '번표명단과 조건값' 엑셀 불러오기 (명단·직전 근무·주휴·잔여휴가·신청오프·기본 조건) */
 export async function importConditions(buf: ArrayBuffer): Promise<Scenario> {
   const Excel = await loadExcel()
@@ -145,7 +246,7 @@ export async function importConditions(buf: ArrayBuffer): Promise<Scenario> {
 const COLOR: Record<string, [string, string]> = {
   D: ['FFF2CC', '000000'], E: ['DDEBF7', '000000'], N: ['1F3864', 'FFFFFF'], 소아: ['E2EFDA', '375623'],
   미드: ['FCE4D6', '833C0B'], 주휴: ['D9D9D9', '404040'], OF: ['EDEDED', '7F7F7F'], 휴가: ['F8CBAD', 'C00000'],
-  공가: ['E4DFEC', '5B2C6F'], 교육: ['BDD7EE', '1F3864'], 병가: ['FDE2E4', '9F1239'], 경조: ['E7E5E4', '44403C'], 생휴: ['FBE4F0', '9D174D'], '-': ['FFFFFF', 'BFBFBF'],
+  공가: ['E4DFEC', '5B2C6F'], 교육: ['BDD7EE', '1F3864'], 병가: ['FDE2E4', '9F1239'], 경조: ['E7E5E4', '44403C'], 생휴: ['FBE4F0', '9D174D'], 수휴: ['E0F2FE', '075985'], '-': ['FFFFFF', 'BFBFBF'],
 }
 
 function roleText(s: Staff) {
@@ -173,7 +274,7 @@ export async function exportRoster(sc: Scenario, issues: Issue[]): Promise<Blob>
   ws.getRow(2).font = { ...font, color: { argb: 'FF595959' } }
   ws.getCell('A2').value += '   |   노랑 = 신청오프 반영 · 형광 분홍 = 신청오프 미반영 · 형광 연두 = 근무 조건 위배'
   const reqs = new Map(sc.requests.map((q) => [`${q.staff}|${q.date}`, q]))
-  const sumCols = ['D', 'E', 'N', '소아', '근무', '주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴']
+  const sumCols = ['D', 'E', 'N', '소아', '근무', '주휴', 'OF', '휴가', '공가', '교육', '병가', '경조', '생휴', '수휴']
   ws.addRow(['번호', '이름', '구분', '주휴', ...dates.map(label), ...sumCols])
   const flagged = new Map<string, string[]>()
   for (const i of issues) for (const [sid, d] of i.cells) {
@@ -185,7 +286,7 @@ export async function exportRoster(sc: Scenario, issues: Issue[]): Promise<Blob>
     const cnt = (c: string) => row.filter((x) => x === c).length
     const work = ['D', 'E', 'N', '소아', '미드'].reduce((a, c) => a + cnt(c), 0)
     const r = ws.addRow([s.no, s.name, roleText(s), WEEKDAYS[s.juhu], ...dates.map((_, d) => row[d] ?? ''),
-      cnt('D'), cnt('E'), cnt('N'), cnt('소아'), work, cnt('주휴'), cnt('OF'), cnt('휴가'), cnt('공가'), cnt('교육'), cnt('병가'), cnt('경조'), cnt('생휴')])
+      cnt('D'), cnt('E'), cnt('N'), cnt('소아'), work, cnt('주휴'), cnt('OF'), cnt('휴가'), cnt('공가'), cnt('교육'), cnt('병가'), cnt('경조'), cnt('생휴'), cnt('수휴')])
     dates.forEach((_, d) => {
       const cell = r.getCell(5 + d)
       const [bg, fg] = COLOR[row[d]] ?? ['FFFFFF', '000000']
